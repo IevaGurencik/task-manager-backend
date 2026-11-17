@@ -20,14 +20,12 @@ public class S3Config {
     @Value("${aws.s3.secret-key}")
     private String secretKey;
 
-    private final String region = "eu-north-1";
-
     @Bean
     public S3Client s3Client() {
         AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
 
         return S3Client.builder()
-                .region(Region.of(region))
+                .region(Region.EU_NORTH_1)
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
                 .build();
     }
@@ -37,7 +35,7 @@ public class S3Config {
         AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
 
         return S3Presigner.builder()
-                .region(Region.of(region))
+                .region(Region.EU_NORTH_1)
                 .credentialsProvider(StaticCredentialsProvider.create(credentials))
                 .build();
     }

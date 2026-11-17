@@ -1,5 +1,22 @@
 package com.example.SpringBackend.service;
 
+import com.example.SpringBackend.controller.FileUploadController;
+import com.example.SpringBackend.exception.StorageException;
+import com.example.SpringBackend.exception.StorageFileNotFoundException;
+import com.example.SpringBackend.model.FileMetadataEntity;
+import com.example.SpringBackend.model.ToDoEntity;
+import com.example.SpringBackend.repository.StorageRepository;
+import com.example.SpringBackend.repository.ToDoRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
@@ -14,25 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
-import com.example.SpringBackend.exception.StorageException;
-import com.example.SpringBackend.exception.StorageFileNotFoundException;
-import com.example.SpringBackend.controller.FileUploadController;
-import com.example.SpringBackend.model.FileMetadataEntity;
-import com.example.SpringBackend.model.ToDoEntity;
-import com.example.SpringBackend.repository.StorageRepository;
-import com.example.SpringBackend.repository.ToDoRepository;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.FileSystemUtils;
-import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
+import java.util.stream.Stream;
 
 @Service
 @Profile("!prod")
@@ -42,15 +41,25 @@ public class FileLocalStorageService implements StorageService {
     private final ToDoRepository todoRepository;
     private final Path rootLocation;
 
-    public FileLocalStorageService(@Value("${storage.location}") String location,
-                                   StorageRepository storageRepository,
-                                   ToDoRepository todoRepository) {
+    public FileLocalStorageService(
+            @Value("${storage.location}") String location,
+            StorageRepository storageRepository,
+            ToDoRepository todoRepository) {
         if (location == null || location.trim().isEmpty()) {
             throw new StorageException("File upload location cannot be empty.");
         }
-        this.rootLocation = Paths.get(location);
+        this.rootLocation = Paths.get(location).toAbsolutePath().normalize();
         this.storageRepository = storageRepository;
         this.todoRepository = todoRepository;
+        init();
+    }
+
+    private void init() {
+        try {
+            Files.createDirectories(rootLocation);
+        } catch (IOException e) {
+            throw new StorageException("Could not initialize storage location", e);
+        }
     }
 
     @Override
@@ -67,53 +76,40 @@ public class FileLocalStorageService implements StorageService {
                 .forEach(file -> {
                     String originalFilename = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
                     String fileExtension = StringUtils.getFilenameExtension(originalFilename);
-                    String storedFilename = UUID.randomUUID().toString() + (fileExtension != null ? "." + fileExtension : "");
+                    String storedFilename = UUID.randomUUID() + (fileExtension != null ? "." + fileExtension : "");
+
                     this.storeFileToDisk(file, storedFilename);
 
                     FileMetadataEntity metadata = new FileMetadataEntity();
                     metadata.setFilename(originalFilename);
                     metadata.setStoredFilename(storedFilename);
                     metadata.setTodo(todo);
-
                     storageRepository.save(metadata);
                 });
     }
 
-    @Override
-    public FileMetadataEntity findMetadataById(Long id) {
-        return storageRepository.findById(id)
-                .orElseThrow(() -> new StorageFileNotFoundException("File metadata not found with id: " + id));
-    }
-
-    private void storeFileToDisk(MultipartFile file, String filename) {
-        try {
-            Path destinationFile = this.rootLocation.resolve(Paths.get(filename)).normalize().toAbsolutePath();
-            if (!destinationFile.getParent().equals(this.rootLocation.toAbsolutePath())) {
-                throw new StorageException("Cannot store file outside current directory.");
-            }
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, destinationFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } catch (IOException e) {
-            throw new StorageException("Failed to store file " + filename, e);
-        }
-    }
-
-    @Override
     public void store(MultipartFile file) {
-        if (file.isEmpty()) {
+        if (file == null || file.isEmpty()) {
             throw new StorageException("Failed to store empty file.");
         }
         String originalFilename = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
         this.storeFileToDisk(file, originalFilename);
     }
 
+    public FileMetadataEntity findMetadataById(Long id) {
+        return storageRepository.findById(id)
+                .orElseThrow(() -> new StorageFileNotFoundException("File metadata not found with id: " + id));
+    }
+
     @Override
     public Resource loadAsResource(String filename) {
         try {
-            Path file = rootLocation.resolve(filename);
+            Path file = rootLocation.resolve(filename).normalize();
+            if (!file.getParent().equals(this.rootLocation)) {
+                throw new StorageFileNotFoundException("Cannot read file outside current directory: " + filename);
+            }
             Resource resource = new UrlResource(file.toUri());
-            if (resource.exists() || resource.isReadable()) {
+            if (resource.exists() && resource.isReadable()) {
                 return resource;
             } else {
                 throw new StorageFileNotFoundException("Could not read file: " + filename);
@@ -129,7 +125,9 @@ public class FileLocalStorageService implements StorageService {
         String contentType = "application/octet-stream";
         try {
             String probed = Files.probeContentType(rootLocation.resolve(filename));
-            if (probed != null) contentType = probed;
+            if (probed != null) {
+                contentType = probed;
+            }
         } catch (IOException ignored) {
         }
 
@@ -142,12 +140,13 @@ public class FileLocalStorageService implements StorageService {
 
     @Override
     public List<String> loadAllDownloadUrls() {
-        try {
-            return Files.walk(this.rootLocation, 1)
+        try (Stream<Path> walk = Files.walk(this.rootLocation, 1)) {
+            return walk
                     .filter(path -> !path.equals(this.rootLocation))
                     .map(this.rootLocation::relativize)
-                    .map(path -> MvcUriComponentsBuilder.fromMethodName(FileUploadController.class,
-                            "serveFile", path.getFileName().toString()).build().toUri().toString())
+                    .map(path -> MvcUriComponentsBuilder.fromMethodName(
+                                    FileUploadController.class, "serveFile", path.getFileName().toString())
+                            .build().toUri().toString())
                     .collect(Collectors.toList());
         } catch (IOException e) {
             throw new StorageException("Failed to generate download URLs", e);
@@ -156,17 +155,10 @@ public class FileLocalStorageService implements StorageService {
 
     @Override
     public Map<String, Object> loadResponseByMetadataId(Long id) {
-        FileMetadataEntity metadata = storageRepository.findById(id)
-                .orElseThrow(() -> new StorageFileNotFoundException("File metadata not found with id: " + id));
-
+        FileMetadataEntity metadata = findMetadataById(id);
         Map<String, Object> response = loadResponseByFilename(metadata.getStoredFilename());
         response.put("filename", metadata.getFilename() != null ? metadata.getFilename() : "file");
         return response;
-    }
-
-    @Override
-    public void deleteAll() {
-        FileSystemUtils.deleteRecursively(rootLocation.toFile());
     }
 
     @Override
@@ -178,21 +170,30 @@ public class FileLocalStorageService implements StorageService {
         storageRepository.delete(metadata);
     }
 
+
     @Override
     public void deletePhysicalFile(String storedFilename) {
         try {
-            Files.deleteIfExists(rootLocation.resolve(storedFilename));
+            Path fileToDelete = rootLocation.resolve(storedFilename).normalize();
+            if (fileToDelete.getParent().equals(this.rootLocation)) {
+                Files.deleteIfExists(fileToDelete);
+            }
         } catch (IOException e) {
             System.err.println("Error while deleting the file: " + storedFilename);
         }
     }
 
-    @Override
-    public void init() {
+    private void storeFileToDisk(MultipartFile file, String filename) {
         try {
-            Files.createDirectories(rootLocation);
+            Path destinationFile = this.rootLocation.resolve(Paths.get(filename)).normalize();
+            if (!destinationFile.getParent().equals(this.rootLocation)) {
+                throw new StorageException("Cannot store file outside current directory.");
+            }
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, destinationFile, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
-            throw new StorageException("Could not initialize storage location", e);
+            throw new StorageException("Failed to store file " + filename, e);
         }
     }
 }

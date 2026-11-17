@@ -7,8 +7,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -21,15 +22,21 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
-
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class FileUploadControllerTest {
@@ -52,7 +59,7 @@ class FileUploadControllerTest {
 
     @Test
     void shouldListAllFiles() throws Exception {
-        Mockito.when(storageService.loadAllDownloadUrls())
+        when(storageService.loadAllDownloadUrls())
                 .thenReturn(Collections.singletonList("http://localhost:8080/api/files/test.txt"));
 
         mockMvc.perform(get("/api/files"))
@@ -63,15 +70,14 @@ class FileUploadControllerTest {
     @Test
     void shouldServeFileByFilename() throws Exception {
         String fileContent = "content";
-        org.springframework.core.io.Resource mockResource =
-                new org.springframework.core.io.ByteArrayResource(fileContent.getBytes());
+        Resource mockResource = new ByteArrayResource(fileContent.getBytes());
 
         Map<String, Object> serviceResponse = new HashMap<>();
         serviceResponse.put("resource", mockResource);
         serviceResponse.put("filename", "test.txt");
         serviceResponse.put("contentType", MediaType.APPLICATION_OCTET_STREAM_VALUE);
 
-        Mockito.when(storageService.loadResponseByFilename("test.txt"))
+        when(storageService.loadResponseByFilename("test.txt"))
                 .thenReturn(serviceResponse);
 
         mockMvc.perform(get("/api/files/test.txt"))
@@ -84,15 +90,14 @@ class FileUploadControllerTest {
     @Test
     void shouldServeFileById() throws Exception {
         String fileContent = "content-by-id";
-        org.springframework.core.io.Resource mockResource =
-                new org.springframework.core.io.ByteArrayResource(fileContent.getBytes());
+        Resource mockResource = new ByteArrayResource(fileContent.getBytes());
 
         Map<String, Object> serviceResponse = new HashMap<>();
         serviceResponse.put("resource", mockResource);
         serviceResponse.put("filename", "document.pdf");
         serviceResponse.put("contentType", MediaType.APPLICATION_PDF_VALUE);
 
-        Mockito.when(storageService.loadResponseByMetadataId(8L))
+        when(storageService.loadResponseByMetadataId(8L))
                 .thenReturn(serviceResponse);
 
         mockMvc.perform(get("/api/files/id/8"))
@@ -103,27 +108,21 @@ class FileUploadControllerTest {
     }
 
     @Test
-    void getFileInfo_InvalidNonNumericId_ReturnsNotFound() throws Exception {
+    void getFileInfo_InvalidNonNumericId_ReturnsBadRequest() throws Exception {
         mockMvc.perform(get("/api/files/id/abc")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
 
-        Mockito.verifyNoInteractions(storageService);
+        verifyNoInteractions(storageService);
     }
 
     @Test
     void shouldHandleFileUpload() throws Exception {
         MockMultipartFile mockFile1 = new MockMultipartFile(
-                "files",
-                "test1.txt",
-                "text/plain",
-                "hello world 1".getBytes()
+                "files", "test1.txt", "text/plain", "hello world 1".getBytes()
         );
         MockMultipartFile mockFile2 = new MockMultipartFile(
-                "files",
-                "test2.txt",
-                "text/plain",
-                "hello world 2".getBytes()
+                "files", "test2.txt", "text/plain", "hello world 2".getBytes()
         );
 
         mockMvc.perform(multipart("/api/files")
@@ -134,13 +133,13 @@ class FileUploadControllerTest {
                 .andExpect(jsonPath("$.message").value("Successfully uploaded 2 files!"))
                 .andExpect(jsonPath("$.todoId").value(1));
 
-        Mockito.verify(storageService, times(1))
-                .store(Mockito.any(MultipartFile[].class), Mockito.eq(1L));
+        verify(storageService, times(1))
+                .store(any(MultipartFile[].class), eq(1L));
     }
 
     @Test
     void shouldReturn404WhenFileNotFoundByFilename() throws Exception {
-        Mockito.when(storageService.loadResponseByFilename("missing.txt"))
+        when(storageService.loadResponseByFilename("missing.txt"))
                 .thenThrow(new StorageFileNotFoundException("File not found"));
 
         mockMvc.perform(get("/api/files/missing.txt"))
@@ -149,7 +148,7 @@ class FileUploadControllerTest {
 
     @Test
     void shouldReturn404WhenFileNotFoundById() throws Exception {
-        Mockito.when(storageService.loadResponseByMetadataId(999L))
+        when(storageService.loadResponseByMetadataId(999L))
                 .thenThrow(new StorageFileNotFoundException("Metadata not found"));
 
         mockMvc.perform(get("/api/files/id/999"))
@@ -159,7 +158,6 @@ class FileUploadControllerTest {
     @Test
     void deleteFileById_ShouldReturnOk_WhenFileExists() throws Exception {
         long fileId = 1L;
-
         doNothing().when(storageService).deleteByMetadataId(fileId);
 
         mockMvc.perform(delete("/api/files/id/{id}", fileId))
@@ -173,7 +171,6 @@ class FileUploadControllerTest {
     @Test
     void deleteFileById_ShouldReturnNotFound_WhenFileDoesNotExist() throws Exception {
         long nonExistingId = 999L;
-
         doThrow(new StorageFileNotFoundException("File not found"))
                 .when(storageService).deleteByMetadataId(nonExistingId);
 
@@ -182,5 +179,4 @@ class FileUploadControllerTest {
 
         verify(storageService, times(1)).deleteByMetadataId(nonExistingId);
     }
-
 }

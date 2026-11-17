@@ -2,7 +2,6 @@ package com.example.SpringBackend.controller;
 
 import com.example.SpringBackend.model.ToDoEntity;
 import com.example.SpringBackend.service.ToDoService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,7 +17,6 @@ import java.util.List;
 public class ToDoController {
     private final ToDoService toDoService;
 
-    @Autowired
     public ToDoController(ToDoService toDoService) {
         this.toDoService = toDoService;
     }
