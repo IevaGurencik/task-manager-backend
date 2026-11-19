@@ -1,6 +1,5 @@
 package com.example.SpringBackend.service;
 
-import com.example.SpringBackend.controller.FileUploadController;
 import com.example.SpringBackend.exception.StorageException;
 import com.example.SpringBackend.exception.StorageFileNotFoundException;
 import com.example.SpringBackend.model.FileMetadataEntity;
@@ -15,28 +14,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @Profile("prod")
@@ -161,26 +155,6 @@ public class FileS3StorageService implements StorageService {
             s3Client.deleteObject(deleteRequest);
         } catch (S3Exception e) {
             System.err.println("Error while deleting the file from S3: " + storedFilename);
-        }
-    }
-
-    @Override
-    public List<String> loadAllDownloadUrls() {
-        try {
-            ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
-                    .bucket(bucketName)
-                    .build();
-
-            return s3Client.listObjectsV2(listRequest).contents().stream()
-                    .map(S3Object::key)
-                    .map(key -> MvcUriComponentsBuilder
-                            .fromMethodName(FileUploadController.class, "serveFile", key)
-                            .build()
-                            .toUri()
-                            .toString())
-                    .collect(Collectors.toList());
-        } catch (S3Exception e) {
-            throw new StorageException("Failed to generate download URLs", e);
         }
     }
 

@@ -1,6 +1,5 @@
 package com.example.SpringBackend.service;
 
-import com.example.SpringBackend.controller.FileUploadController;
 import com.example.SpringBackend.exception.StorageException;
 import com.example.SpringBackend.exception.StorageFileNotFoundException;
 import com.example.SpringBackend.model.FileMetadataEntity;
@@ -15,7 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,12 +24,9 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @Profile("!prod")
@@ -136,21 +131,6 @@ public class FileLocalStorageService implements StorageService {
         response.put("filename", resource.getFilename() != null ? resource.getFilename() : "file");
         response.put("contentType", contentType);
         return response;
-    }
-
-    @Override
-    public List<String> loadAllDownloadUrls() {
-        try (Stream<Path> walk = Files.walk(this.rootLocation, 1)) {
-            return walk
-                    .filter(path -> !path.equals(this.rootLocation))
-                    .map(this.rootLocation::relativize)
-                    .map(path -> MvcUriComponentsBuilder.fromMethodName(
-                                    FileUploadController.class, "serveFile", path.getFileName().toString())
-                            .build().toUri().toString())
-                    .collect(Collectors.toList());
-        } catch (IOException e) {
-            throw new StorageException("Failed to generate download URLs", e);
-        }
     }
 
     @Override

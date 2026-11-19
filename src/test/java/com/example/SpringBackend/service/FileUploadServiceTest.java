@@ -22,7 +22,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -104,19 +103,6 @@ class FileUploadServiceTest {
         assertThatThrownBy(() -> storageService.store(maliciousFile))
                 .isInstanceOf(StorageException.class)
                 .hasMessageContaining("Cannot store file outside current directory");
-    }
-
-    @Test
-    void shouldListAllFilesAndUrls() throws IOException {
-        Files.writeString(sharedTempDir.resolve("first.txt"), "first");
-        Files.writeString(sharedTempDir.resolve("second.txt"), "second");
-
-        List<String> urls = storageService.loadAllDownloadUrls();
-        assertThat(urls).hasSize(2);
-        assertThat(urls).containsExactlyInAnyOrder(
-                "http://localhost/api/files/first.txt",
-                "http://localhost/api/files/second.txt"
-        );
     }
 
     @Test

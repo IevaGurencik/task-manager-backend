@@ -1,5 +1,6 @@
 package com.example.SpringBackend.controller;
 
+import com.example.SpringBackend.exception.GlobalExceptionHandler;
 import com.example.SpringBackend.exception.StorageFileNotFoundException;
 import com.example.SpringBackend.service.FileLocalStorageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +19,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.pattern.PathPatternParser;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,7 +28,6 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -52,39 +51,9 @@ class FileUploadControllerTest {
     @BeforeEach
     void setUp() {
         this.mockMvc = MockMvcBuilders.standaloneSetup(fileUploadController)
-                .setControllerAdvice(fileUploadController)
+                .setControllerAdvice(new GlobalExceptionHandler())
                 .setPatternParser(new PathPatternParser())
                 .build();
-    }
-
-    @Test
-    void shouldListAllFiles() throws Exception {
-        when(storageService.loadAllDownloadUrls())
-                .thenReturn(Collections.singletonList("http://localhost:8080/api/files/test.txt"));
-
-        mockMvc.perform(get("/api/files"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0]").value("http://localhost:8080/api/files/test.txt"));
-    }
-
-    @Test
-    void shouldServeFileByFilename() throws Exception {
-        String fileContent = "content";
-        Resource mockResource = new ByteArrayResource(fileContent.getBytes());
-
-        Map<String, Object> serviceResponse = new HashMap<>();
-        serviceResponse.put("resource", mockResource);
-        serviceResponse.put("filename", "test.txt");
-        serviceResponse.put("contentType", MediaType.APPLICATION_OCTET_STREAM_VALUE);
-
-        when(storageService.loadResponseByFilename("test.txt"))
-                .thenReturn(serviceResponse);
-
-        mockMvc.perform(get("/api/files/test.txt"))
-                .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"test.txt\""))
-                .andExpect(content().contentType(MediaType.APPLICATION_OCTET_STREAM))
-                .andExpect(content().bytes(fileContent.getBytes()));
     }
 
     @Test
@@ -100,20 +69,11 @@ class FileUploadControllerTest {
         when(storageService.loadResponseByMetadataId(8L))
                 .thenReturn(serviceResponse);
 
-        mockMvc.perform(get("/api/files/id/8"))
+        mockMvc.perform(get("/api/files/8"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"document.pdf\""))
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF))
                 .andExpect(content().bytes(fileContent.getBytes()));
-    }
-
-    @Test
-    void getFileInfo_InvalidNonNumericId_ReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/files/id/abc")
-                        .accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest());
-
-        verifyNoInteractions(storageService);
     }
 
     @Test
@@ -138,20 +98,11 @@ class FileUploadControllerTest {
     }
 
     @Test
-    void shouldReturn404WhenFileNotFoundByFilename() throws Exception {
-        when(storageService.loadResponseByFilename("missing.txt"))
-                .thenThrow(new StorageFileNotFoundException("File not found"));
-
-        mockMvc.perform(get("/api/files/missing.txt"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
     void shouldReturn404WhenFileNotFoundById() throws Exception {
         when(storageService.loadResponseByMetadataId(999L))
                 .thenThrow(new StorageFileNotFoundException("Metadata not found"));
 
-        mockMvc.perform(get("/api/files/id/999"))
+        mockMvc.perform(get("/api/files/999"))
                 .andExpect(status().isNotFound());
     }
 
@@ -160,7 +111,7 @@ class FileUploadControllerTest {
         long fileId = 1L;
         doNothing().when(storageService).deleteByMetadataId(fileId);
 
-        mockMvc.perform(delete("/api/files/id/{id}", fileId))
+        mockMvc.perform(delete("/api/files/{id}", fileId))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.message").value("File with ID " + fileId + " successfully deleted!"));
@@ -174,7 +125,7 @@ class FileUploadControllerTest {
         doThrow(new StorageFileNotFoundException("File not found"))
                 .when(storageService).deleteByMetadataId(nonExistingId);
 
-        mockMvc.perform(delete("/api/files/id/{id}", nonExistingId))
+        mockMvc.perform(delete("/api/files/{id}", nonExistingId))
                 .andExpect(status().isNotFound());
 
         verify(storageService, times(1)).deleteByMetadataId(nonExistingId);

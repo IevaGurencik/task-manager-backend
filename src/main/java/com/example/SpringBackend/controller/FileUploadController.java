@@ -1,6 +1,5 @@
 package com.example.SpringBackend.controller;
 
-import com.example.SpringBackend.exception.StorageFileNotFoundException;
 import com.example.SpringBackend.service.StorageService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -8,7 +7,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -30,22 +27,7 @@ public class FileUploadController {
         this.storageService = storageService;
     }
 
-    @GetMapping("/files")
-    public List<String> listUploadedFiles() {
-        return storageService.loadAllDownloadUrls();
-    }
-
-    @GetMapping("/files/{filename:.+}")
-    public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
-        Map<String, Object> fileResponse = storageService.loadResponseByFilename(filename);
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileResponse.get("filename") + "\"")
-                .contentType(MediaType.parseMediaType((String) fileResponse.get("contentType")))
-                .body((Resource) fileResponse.get("resource"));
-    }
-
-    @GetMapping("/files/id/{id}")
+    @GetMapping("/files/{id}")
     public ResponseEntity<Resource> serveFileById(@PathVariable Long id) {
         Map<String, Object> fileResponse = storageService.loadResponseByMetadataId(id);
 
@@ -66,17 +48,12 @@ public class FileUploadController {
         ));
     }
 
-    @DeleteMapping("/files/id/{id}")
+    @DeleteMapping("/files/{id}")
     public ResponseEntity<?> deleteFileById(@PathVariable Long id) {
         storageService.deleteByMetadataId(id);
 
         return ResponseEntity.ok().body(Map.of(
                 "message", "File with ID " + id + " successfully deleted!"
         ));
-    }
-
-    @ExceptionHandler(StorageFileNotFoundException.class)
-    public ResponseEntity<?> handleStorageFileNotFound(StorageFileNotFoundException exc) {
-        return ResponseEntity.notFound().build();
     }
 }
